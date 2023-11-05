@@ -6,6 +6,7 @@ import os
 import pymysql
 import pygame
 from pygame import mixer
+import random
 
 ubicacion_temporal = os.path.expanduser("~")
 
@@ -54,7 +55,49 @@ def guardar_cancion_en_db_y_actualizar_lista(nombre_cancion, file_path):
                 lista_canciones.insert(tk.END, nombre)
     finally:
         conexion.close()
+        
+def seleccionar_siguiente_cancion_aleatoria():
+    global cancion_actual, reproductor, archivo_temporal_actual, archivo_temporal_siguiente, reproduccion_pausada
 
+    if cancion_actual is not None and reproductor is not None and not reproductor.get_busy():
+        # Selección aleatoria de la siguiente canción
+        siguiente_cancion = random.choice(nombres_canciones)
+        print(f"Siguiente canción aleatoria seleccionada: {siguiente_cancion}")
+
+        # Conectar a la base de datos y obtener el archivo de la canción
+        conexion = pymysql.connect(
+            host="localhost",
+            user="root",
+            password="",
+            database="bd1",
+            charset="utf8",
+            connect_timeout=60
+        )
+
+        try:
+            with conexion.cursor() as cursor:
+                consulta = "SELECT archivo_cancion FROM canciones WHERE nombre_cancion = %s"
+                cursor.execute(consulta, (siguiente_cancion,))
+                resultado = cursor.fetchone()
+                if resultado:
+                    # Guardar la nueva canción en el archivo temporal siguiente
+                    with open(archivo_temporal_siguiente, "wb") as archivo_temporal:
+                        archivo_temporal.write(resultado[0])
+                    # Reproducir la nueva canción desde el archivo temporal siguiente
+                    reproductor = mixer.music
+                    reproductor.load(archivo_temporal_siguiente)
+                    reproductor.play()
+                    cancion_actual = siguiente_cancion
+                    archivo_en_reproduccion = archivo_temporal_siguiente  # Actualizar el archivo en reproducción
+                    reproduccion_pausada = False
+
+                    # Intercambiar los nombres de los archivos temporales
+                    archivo_temporal_actual, archivo_temporal_siguiente = archivo_temporal_siguiente, archivo_temporal_actual
+                else:
+                    print("La canción no se encontró en la base de datos.")
+        finally:
+            conexion.close()
+            
 # Función para seleccionar y guardar música
 def seleccionar_y_guardar_musica():
     file_path = filedialog.askopenfilename(title="Seleccione una canción",
@@ -97,7 +140,6 @@ def pausar_reanudar():
         reproduccion_pausada = False
                 
 
-# Función para manejar la selección de una canción desde el Listbox
 def seleccionar_cancion(event):
     global cancion_actual, reproductor, archivo_temporal_actual, archivo_temporal_siguiente, reproduccion_pausada
 
@@ -132,8 +174,8 @@ def seleccionar_cancion(event):
                 reproductor.play()
                 cancion_actual = seleccion
                 archivo_en_reproduccion = archivo_temporal_siguiente  # Actualizar el archivo en reproducción
-                reproduccion_pausada = False 
-                
+                reproduccion_pausada = False
+
                 # Intercambiar los nombres de los archivos temporales
                 archivo_temporal_actual, archivo_temporal_siguiente = archivo_temporal_siguiente, archivo_temporal_actual
             else:
@@ -141,7 +183,14 @@ def seleccionar_cancion(event):
     finally:
         conexion.close()
 
+    # Llamar a la función para seleccionar la siguiente canción aleatoria cuando la actual termine
+    reproductor.set_endevent(pygame.USEREVENT)
+    pygame.mixer.music.set_endevent(pygame.USEREVENT)
+    pygame.mixer.music.queue(archivo_temporal_siguiente)
 
+# Configurar el evento de canción terminada
+pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
+    
 # Función para detener la reproducción
 def detener_reproduccion():
     global cancion_actual, reproductor, archivo_temporal_actual, archivo_temporal_siguiente
