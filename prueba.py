@@ -20,6 +20,10 @@ reproductor = None
 reproduccion_pausada = False
 posicion_reproduccion = 0  
 
+# Variable para mantener un registro del estado de la reproducción
+cancion_actual = "No hay canción reproduciendo..."
+
+
 # Variables para almacenar los nombres de los archivos temporales
 archivo_temporal_actual = "musica_temp/temp_cancion_actual.mp3"
 archivo_temporal_siguiente = "musica_temp/temp_cancion_siguiente.mp3"
@@ -205,6 +209,182 @@ def detener_reproduccion():
             os.remove(archivo_temporal_siguiente)
 
 
+# Variable para mantener el índice de la canción actual
+indice_cancion_actual = 0
+
+# Función para reproducir la canción seleccionada
+def reproducir_cancion_seleccionada(seleccion):
+    global cancion_actual, reproductor, archivo_temporal_actual, archivo_temporal_siguiente, reproduccion_pausada
+
+    # Conectar a la base de datos y obtener el archivo de la canción
+    conexion = pymysql.connect(
+        host="localhost",
+        user="root",
+        password="",
+        database="bd1",
+        charset="utf8",
+        connect_timeout=60
+    )
+
+    try:
+        with conexion.cursor() as cursor:
+            consulta = "SELECT archivo_cancion FROM canciones WHERE nombre_cancion = %s"
+            cursor.execute(consulta, (seleccion,))
+            resultado = cursor.fetchone()
+            if resultado:
+                # Guardar la nueva canción en el archivo temporal siguiente
+                with open(archivo_temporal_siguiente, "wb") as archivo_temporal:
+                    archivo_temporal.write(resultado[0])
+                # Reproducir la nueva canción desde el archivo temporal siguiente
+                reproductor = mixer.music
+                reproductor.load(archivo_temporal_siguiente)
+                reproductor.play()
+                cancion_actual = seleccion
+                archivo_en_reproduccion = archivo_temporal_siguiente  # Actualizar el archivo en reproducción
+                reproduccion_pausada = False
+                
+                
+                # Actualizar la etiqueta con el nombre de la nueva canción o el mensaje predeterminado
+                if cancion_actual:
+                    etiqueta_cancion_actual.config(text=f"{cancion_actual}")
+                else:
+                    etiqueta_cancion_actual.config(text="No hay canción reproduciendo")
+        
+                # Intercambiar los nombres de los archivos temporales
+                archivo_temporal_actual, archivo_temporal_siguiente = archivo_temporal_siguiente, archivo_temporal_actual
+            else:
+                print("La canción no se encontró en la base de datos.")
+    finally:
+        conexion.close()
+
+    # Llamar a la función para seleccionar la siguiente canción aleatoria cuando la actual termine
+    reproductor.set_endevent(pygame.USEREVENT)
+    pygame.mixer.music.set_endevent(pygame.USEREVENT)
+    pygame.mixer.music.queue(archivo_temporal_siguiente)
+
+# ...
+
+# Función para seleccionar una canción desde la lista
+def seleccionar_cancion(event):
+    global cancion_actual, reproductor, archivo_temporal_actual, archivo_temporal_siguiente, reproduccion_pausada
+
+    if cancion_actual is not None and reproductor is not None and reproductor.get_busy():
+        reproductor.stop()
+
+    # Obtener el índice de la canción seleccionada directamente desde el widget Listbox
+    seleccion_index = lista_canciones.curselection()
+    
+    if seleccion_index:
+        seleccion = lista_canciones.get(seleccion_index[0])
+        print(f"Canción seleccionada: {seleccion}")
+
+        # Conectar a la base de datos y obtener el archivo de la canción
+        conexion = pymysql.connect(
+            host="localhost",
+            user="root",
+            password="",
+            database="bd1",
+            charset="utf8",
+            connect_timeout=60
+        )
+
+        try:
+            with conexion.cursor() as cursor:
+                consulta = "SELECT archivo_cancion FROM canciones WHERE nombre_cancion = %s"
+                cursor.execute(consulta, (seleccion,))
+                resultado = cursor.fetchone()
+                if resultado:
+                    # Guardar la nueva canción en el archivo temporal siguiente
+                    with open(archivo_temporal_siguiente, "wb") as archivo_temporal:
+                        archivo_temporal.write(resultado[0])
+                    # Reproducir la nueva canción desde el archivo temporal siguiente
+                    reproductor = mixer.music
+                    reproductor.load(archivo_temporal_siguiente)
+                    reproductor.play()
+                    cancion_actual = seleccion
+                    archivo_en_reproduccion = archivo_temporal_siguiente  # Actualizar el archivo en reproducción
+                    reproduccion_pausada = False
+
+                    # Intercambiar los nombres de los archivos temporales
+                    archivo_temporal_actual, archivo_temporal_siguiente = archivo_temporal_siguiente, archivo_temporal_actual
+                    
+                    # Actualizar la etiqueta con el nombre de la nueva canción
+                    etiqueta_cancion_actual.config(text=f"{cancion_actual}")
+                else:
+                    print("La canción no se encontró en la base de datos.")
+        finally:
+            conexion.close()
+
+        # Llamar a la función para seleccionar la siguiente canción aleatoria cuando la actual termine
+        reproductor.set_endevent(pygame.USEREVENT)
+        pygame.mixer.music.set_endevent(pygame.USEREVENT)
+        pygame.mixer.music.queue(archivo_temporal_siguiente)
+
+# Función para seleccionar la canción siguiente
+def seleccionar_siguiente_cancion():
+    global cancion_actual, reproductor, archivo_temporal_actual, archivo_temporal_siguiente, reproduccion_pausada, indice_cancion_actual
+
+    if cancion_actual is not None and reproductor is not None and reproductor.get_busy():
+        reproductor.stop()
+
+    # Incrementar el índice para seleccionar la siguiente canción
+    indice_cancion_actual = (indice_cancion_actual + 1) % len(nombres_canciones)
+    seleccion = nombres_canciones[indice_cancion_actual]
+    print(f"Siguiente canción seleccionada: {seleccion}")
+
+    # Resto de la lógica para reproducir la canción seleccionada...
+    reproducir_cancion_seleccionada(seleccion)
+
+    # Actualizar la selección en la Listbox
+    lista_canciones.selection_clear(0, tk.END)  # Limpiar selección actual
+    lista_canciones.selection_set(indice_cancion_actual)  # Establecer nueva selección
+    lista_canciones.activate(indice_cancion_actual)  # Activar la selección
+
+    # Mover la barra de selección al elemento recién seleccionado
+    lista_canciones.see(indice_cancion_actual)
+
+# Función para seleccionar la canción anterior
+def seleccionar_cancion_anterior():
+    global cancion_actual, reproductor, archivo_temporal_actual, archivo_temporal_siguiente, reproduccion_pausada, indice_cancion_actual
+
+    if cancion_actual is not None and reproductor is not None and reproductor.get_busy():
+        reproductor.stop()
+
+    # Decrementar el índice para seleccionar la canción anterior
+    indice_cancion_actual = (indice_cancion_actual - 1) % len(nombres_canciones)
+    seleccion = nombres_canciones[indice_cancion_actual]
+    print(f"Canción anterior seleccionada: {seleccion}")
+
+    # Resto de la lógica para reproducir la canción seleccionada...
+    reproducir_cancion_seleccionada(seleccion)
+
+    # Actualizar la selección en la Listbox
+    lista_canciones.selection_clear(0, tk.END)  # Limpiar selección actual
+    lista_canciones.selection_set(indice_cancion_actual)  # Establecer nueva selección
+    lista_canciones.activate(indice_cancion_actual)  # Activar la selección
+
+    # Mover la barra de selección al elemento recién seleccionado
+    lista_canciones.see(indice_cancion_actual)
+
+
+def animacion_desplazamiento():
+    # Obtén el texto actual de la etiqueta
+    texto_actual = etiqueta_cancion_actual.cget("text")
+
+    # Verifica si el texto supera el ancho de la etiqueta
+    if etiqueta_cancion_actual.winfo_reqwidth() > etiqueta_cancion_actual.winfo_width():
+        # Desplaza el texto hacia la izquierda
+        nuevo_texto = texto_actual[1:] + texto_actual[0]
+
+        # Actualiza el texto en la etiqueta
+        etiqueta_cancion_actual.config(text=nuevo_texto)
+    else:
+        # Si el texto no supera el ancho de la etiqueta, reinicia la animación
+        etiqueta_cancion_actual.config(text=cancion_actual)
+
+    # Programa la próxima actualización después de 100 milisegundos (ajusta según sea necesario)
+    ventana.after(150, animacion_desplazamiento)
+
 # Crear una ventana tkinter
 ventana = tk.Tk()
 ventana.title("Reproductor de música")
@@ -230,28 +410,42 @@ fondo_img = tk.PhotoImage(file="musica_temp/fondo.png")
 fondo_label = tk.Label(ventana, image=fondo_img)
 fondo_label.place(relwidth=1, relheight=1) 
 
-# Crear un botón para seleccionar y guardar la canción
-boton_seleccionar = tk.Button(ventana, text="Seleccionar y Guardar Canción", command=seleccionar_y_guardar_musica, font=("Arial", 16), bg="green", fg="white")
-boton_seleccionar.pack(padx=20, pady=10)
-
 # Crear un Listbox para mostrar los nombres de las canciones
 fuente = ("Arial", 15)  
 nombres_canciones = cargar_nombres_canciones()
 
 global lista_canciones
 
-lista_canciones = tk.Listbox(ventana, height=10, width=100, bg="navy", fg="white") 
+lista_canciones = tk.Listbox(ventana, height=10, width=35, bg="navy", fg="white") 
 lista_canciones.configure(font=fuente)
 for nombre in nombres_canciones:
     lista_canciones.insert(tk.END, nombre)
-lista_canciones.pack(padx=20, pady=10)
+lista_canciones.place(relx=0.015, rely=0.5 - 0.2)
 
 # Asociar la función de selección a la lista
 lista_canciones.bind('<<ListboxSelect>>', seleccionar_cancion)
 
+# Crear un botón para seleccionar y guardar la canción
+boton_seleccionar = tk.Button(ventana, text="Seleccionar y Guardar Canción", command=seleccionar_y_guardar_musica, font=("Arial", 16), bg="green", fg="white")
+boton_seleccionar.pack(padx=20, pady=10)
+
+# Crear un botón para la siguiente canción
+boton_siguiente = tk.Button(ventana, text="Siguiente", command=seleccionar_siguiente_cancion, font=("Arial", 16), bg="orange", fg="white")
+boton_siguiente.place(relx=0.6, rely= 0.2)
+
+# Crear un botón para la canción anterior
+boton_anterior = tk.Button(ventana, text="Anterior", command=seleccionar_cancion_anterior, font=("Arial", 16), bg="red", fg="white")
+boton_anterior.place(relx=0.2 - 0.03, rely=0.2)
+
 # Crear un botón para pausar o reanudar la reproducción
 boton_pausar_reanudar = tk.Button(ventana, text="Pausar/Reanudar", command=pausar_reanudar, font=("Arial", 16), bg="blue", fg="white")
-boton_pausar_reanudar.pack(padx=20, pady=10)
+boton_pausar_reanudar.place(relx=0.2 + 0.07, rely=0.8)
 
+# Etiqueta para mostrar la canción que se reproduce
+etiqueta_cancion_actual = tk.Label(ventana, text="No hay canción reproduciendo", font=("Arial", 14), bg="navy", fg="white")
+etiqueta_cancion_actual.config(text=f"{cancion_actual}")
+etiqueta_cancion_actual.place(relx= 0.1 - 0.05, rely=0.1 + 0.02, relwidth=0.9)
+
+animacion_desplazamiento()
 # Iniciar el bucle principal de Tkinter
 ventana.mainloop()
